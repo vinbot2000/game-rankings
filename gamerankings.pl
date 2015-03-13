@@ -21,10 +21,12 @@
 # SOFTWARE.
 use strict;
 use Net::SMTP;
-use TrueSkill;
 use Getopt::Long;
 use File::Temp;
 use File::Copy;
+use FindBin;
+use lib $FindBin::Bin;
+use TrueSkill;
 
 my $nBaseRating = 1500;
 my $nKFactor = 32;
@@ -287,8 +289,7 @@ sub processDb
     {
 		print "\nMailing results";
 		my $hashUsers = getMailList($stats_notifications_file);
-        mailresults( $hashUsers, "Games Group", "Games Ranking Update", $szBuffer );    
-		backupDb();
+        mailresults( $hashUsers, "Games Group", "Games Ranking Update", $szBuffer );
 		print "\nMailing results complete";
     }	
 	
@@ -298,6 +299,7 @@ sub processDb
 		outputGameDataToFlatFile( $refGameData );	
 		print "\nOutputting to flat file complete";
 	}
+	backupDb();
 }
 
 sub processDiff 
@@ -332,8 +334,8 @@ sub processDiff
 	{
 		my $hashUsers = getMailList($stats_notifications_file);
 		mailresults( $hashUsers, "Games Group", "Games Ranking Update", $finalBuffer );
-		backupDb();
-	}	
+	}
+	backupDb();
 }
 
 sub updateHash
