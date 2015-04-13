@@ -21,9 +21,11 @@
 # SOFTWARE.
 use strict;
 use Net::SMTP;
+use MIME::Lite::TT::HTML;
 use Getopt::Long;
 use File::Temp;
 use File::Copy;
+use File::Basename;
 use FindBin;
 use lib $FindBin::Bin;
 use TrueSkill;
@@ -57,6 +59,7 @@ my $flatfile = 0;
 my $mergediff = 0;
 my $command = "processdb";
 my $backup_notifications_file;
+my $templatedir = ".";
 my $stats_notifications_file = "gamesemailnotifications.txt";
 my $parsed_args = GetOptions (	"command=s" => \$command,
 								"email=i" => \$email,
@@ -64,7 +67,9 @@ my $parsed_args = GetOptions (	"command=s" => \$command,
 								"dbdiff=s"  => \$dbdiff,
 								"flatfile=i" => \$flatfile,
 								"mergediff=i" => \$mergediff,
-								"backupnotifications=s" => \$backup_notifications_file); 
+								"templatedir" => \$templatedir,
+								"resultsnotifications=s" => \$stats_notifications_file,
+								"backupnotifications=s" => \$backup_notifications_file);
 
 eval
 {
@@ -760,7 +765,7 @@ sub backupDb
 	{
 		my $hashUsers = getMailList($backup_notifications_file);
 		my $szBuffer = getFileBuffer( $dbfile );
-		mailresults( $hashUsers, "Games Backup Users", "Game Database Backup", $szBuffer );
+		mailresults_backup( $hashUsers, "Games Backup Users", "Game Database Backup", $szBuffer );
 	}
 }
 
@@ -804,13 +809,21 @@ sub getFileBuffer
     return( $szBuffer );
 }
 
-sub mailresults
+sub mailresults_backup
 {
     my $refUsers = shift;
     my $szRecipient = shift;
     my $szSubject = shift;
     my $szBufferToMail = shift;
-    
+	
+	my($filename, $dirs, $suffix) = fileparse($dbfile);
+	
+	my %params;
+	$params{gamedb} = $filename . $suffix;
+
+	my %options;
+	$options{INCLUDE_PATH} = $templatedir;
+
     foreach my $host ( keys(%$refUsers) )
     {
         #
@@ -818,23 +831,76 @@ sub mailresults
         #
         if( scalar( @{$refUsers->{$host}} ) )
         {
-            my $smtp = Net::SMTP->new($host,
-                            Hello => $ENV{MACHINENAME},
-                            Timeout => 60);
-            $smtp->mail("script\@gamerankingscript.com") or die "mail. Server said ", $smtp->code(), " ", $smtp->message();
+			my $szRecipients = join(",", @{$refUsers->{$host}});
 			
-			print "\nMailing: @{$refUsers->{$host}}";
+			my $msg = MIME::Lite::TT::HTML->new(
+				From        => 'script@gamerankingscript.com',
+				To          => $szRecipients,
+				Subject     => $szSubject,
+				Encoding    => 'quoted-printable',
+				Template    => {
+					html => 'game_backup_template.html',
+					text => 'game_backup_template.txt',
+				},
+				Charset     => 'utf8',
+				TmplOptions => \%options,
+				TmplParams  => \%params,
+			);
+
+			$msg->attr("content-type"  => "multipart/mixed");
+
+			# Attach a PDF to the message
+			$msg->attach(  
+				Type        =>  'text/plain',
+				Path        =>  $dbfile,
+				Filename    =>  'gamedb.txt',
+				Disposition =>  'attachment'
+			);
 			
-            $smtp->recipient(@{$refUsers->{$host}}) or die "recipient. Server said ", $smtp->code(), " ", $smtp->message();
-            
-            $smtp->data;
-            $smtp->datasend("From: <Game Rankings Script> script\@gamerankingscript.com\n") or die "datasend. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->datasend("To: $szRecipient\n") or die "datasend2. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->datasend("Subject: $szSubject\n") or die "datasend3. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->datasend("\n") or die "datasend4. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->datasend($szBufferToMail) or die "datasend5. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->dataend() or die "dataend. Server said ", $smtp->code(), " ", $smtp->message();
-            $smtp->quit() or die "quit. Server said ", $smtp->code(), " ", $smtp->message();
+			$msg->send();
+        }
+    }
+}
+
+sub mailresults
+{
+    my $refUsers = shift;
+    my $szRecipient = shift;
+    my $szSubject = shift;
+    my $szBufferToMail = shift;
+	
+	my($filename, $dirs, $suffix) = fileparse($dbfile);
+	
+	my %params;
+	$params{gameresults} = $szBufferToMail;
+
+	my %options;
+	$options{INCLUDE_PATH} = $templatedir;
+
+    foreach my $host ( keys(%$refUsers) )
+    {
+        #
+        # notify the users
+        #
+        if( scalar( @{$refUsers->{$host}} ) )
+        {
+			my $szRecipients = join(",", @{$refUsers->{$host}});
+			
+			my $msg = MIME::Lite::TT::HTML->new(
+				From        => 'script@gamerankingscript.com',
+				To          => $szRecipients,
+				Subject     => $szSubject,
+				Encoding    => 'quoted-printable',
+				Template    => {
+					html => 'game_results_template.html',
+					text => 'game_results_template.txt',
+				},
+				Charset     => 'utf8',
+				TmplOptions => \%options,
+				TmplParams  => \%params,
+			);
+
+			$msg->send();
         }
     }
 }

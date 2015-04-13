@@ -1,0 +1,3 @@
+Below are the latest game results:
+
+[% gameresults %]
